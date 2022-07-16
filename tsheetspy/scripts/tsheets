@@ -1,10 +1,12 @@
+#!/usr/bin/python3
+
 import argparse
 import yaml
 import tempfile
 import subprocess
 import os
 
-from api import *
+from tsheetspy.api import *
 
 parser = argparse.ArgumentParser(description = 'Interact with the TSheets API.')
 parser.add_argument("--token", "-k", metavar = "PATH", type=str, nargs = 1, help = 'path to read an OAuth token from', default = '~/.config/tsheets/token')
