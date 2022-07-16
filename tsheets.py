@@ -1,0 +1,184 @@
+import argparse
+import yaml
+import tempfile
+import subprocess
+import os
+
+from api import *
+
+parser = argparse.ArgumentParser(description = 'Interact with the TSheets API.')
+parser.add_argument("--token", "-k", metavar = "PATH", type=str, nargs = 1, help = 'path to read an OAuth token from', default = '~/.config/tsheets/token')
+subparsers = parser.add_subparsers(title = 'commands', metavar='command')
+
+def _time_to_hms(tdelta):
+    tsec = tdelta.total_seconds()
+    h = tsec // (60*60)
+    tsec -= h * 60 * 60
+    m = tsec // (60)
+    tsec -= m * 60
+    s = tsec
+    return f"{int(h):2d}:{int(m):02d}:{int(s):02d}"
+
+def cmd_status(api, args):
+    user = api.user()
+    totals = api.totals()
+    if totals['item'].total_seconds() != 0:
+        clocked_in = True
+        ts = api.timesheet_cur()
+    else:
+        clocked_in = False
+        ts = api.timesheet_last()
+    print(f"logged in as {user['first_name']} {user['last_name']} <{user['email']}>")
+    print(f"this week: {_time_to_hms(totals['week'])}")
+    print(f"    today: {_time_to_hms(totals['day'])}")
+    print(f"{'on' if clocked_in else 'off'} the clock since {ts.start if clocked_in else ts.end}")
+    print(f"{'current' if clocked_in else 'last'} timesheet:")
+    if clocked_in:
+        print(f"  time: {_time_to_hms(totals['item'])}")
+    else:
+        print(f"  time: {_time_to_hms(ts.end - ts.start)}")
+    print(f"  jobcode: {api.jobcodes()[int(ts.jobcode_id)]['name']}")
+    for k,v in ts.customfields.items():
+        print(f"  {api.customfields()[int(k)]['name']}: {v}")
+parser.set_defaults(cmd = cmd_status)
+parser_status = subparsers.add_parser('status', help = 'See status.')
+
+def edit_yaml(cfg):
+    with tempfile.NamedTemporaryFile(suffix='.yaml', prefix='tsheets') as tf:
+        tf.write(yaml.dump(cfg, sort_keys = False).encode())
+        tf.flush()
+        subprocess.call([os.environ.get('EDITOR', '/usr/bin/editor'), tf.name])
+        
+        tf.seek(0)
+        newdata = tf.read()
+        if len(newdata) == 0:
+            raise ValueError('saw an empty yaml file; aborting')
+        return yaml.safe_load(newdata.decode())
+
+def cmd_clock_in(api, args):
+    if api.timesheet_cur():
+        raise ValueError('already clocked in; did you mean to switch?')
+    
+    cfg = None
+    if not args.template:
+        ts_old = api.timesheet_last()
+        cfg = ts_old.to_yaml()
+        del cfg['id']
+        del cfg['user_id']
+        del cfg['end']
+        del cfg['start']
+    else:
+        cfg = yaml.safe_load(open(os.path.expanduser(f"~/.config/tsheets/templates/{args.template[0]}.yaml"), "r").read())
+    cfg['start'] = datetime.datetime.now().astimezone().replace(microsecond=0).isoformat()
+    
+    if args.edit:
+        cfg = edit_yaml(cfg)
+    
+    ts = api.timesheet_from_yaml(cfg)
+    ts.clock_in()
+    print(f"clocked {'in' if not ts.end else 'out'}")
+    print(f"  jobcode: {api.jobcodes()[int(ts.jobcode_id)]['name']}")
+    for k,v in ts.customfields.items():
+        print(f"  {api.customfields()[int(k)]['name']}: {v}")
+parser_clock_in = subparsers.add_parser('clockin', aliases = ['ci', 'in', 'new'], help = "Create a new timesheet.")
+parser_clock_in.set_defaults(cmd = cmd_clock_in)
+parser_clock_in.add_argument("--template", "-t", metavar = "TEMPLATE_NAME", type = str, nargs = 1, help = 'name of a template yaml file', default = None)
+parser_clock_in.add_argument("--edit", "-e", action='store_true', default = False, help = 'launch an editor on the proposed timesheet')
+
+def cmd_edit(api, args):
+    cur = api.timesheet_cur()
+    if args.previous:
+        if cur:
+            raise ValueError('not clocked out (no previous timesheet to edit)')
+        cur = api.timesheet_last()
+    else:
+        if not cur:
+            raise ValueError('not clocked in; did you mean to clockin or edit --previous?')
+    cfg = edit_yaml(cur.to_yaml())
+    cur.update(yaml = cfg)
+    print(f"updated timesheet")
+parser_edit = subparsers.add_parser('edit', aliases = ['ed', 'e'], help = "Edit the current timesheet.")
+parser_edit.set_defaults(cmd = cmd_edit)
+parser_edit.add_argument("--previous", "-p", action='store_true', default = False, help = 'edit the previously clocked out timesheet')
+
+def cmd_switch(api, args):
+    cur = api.timesheet_cur()
+    if not cur:
+        raise ValueError('not clocked in; did you mean to clockin?')
+    curcfg = cur.to_yaml()
+    curcfg['end'] = datetime.datetime.now().astimezone().replace(microsecond=0).isoformat()
+    if args.editold:
+        curcfg = edit_yaml(curcfg)
+    if not curcfg['end']:
+        raise ValueError('end not set in old timesheet -- did you really plan to clock out?')
+    
+    cfg = None
+    if not args.template:
+        cfg = cur.to_yaml()
+        del cfg['id']
+        del cfg['user_id']
+        del cfg['end']
+        del cfg['start']
+    else:
+        cfg = yaml.safe_load(open(os.path.expanduser(f"~/.config/tsheets/templates/{args.template[0]}.yaml"), "r").read())
+    cfg['start'] = curcfg['end']
+    if args.edit:
+        cfg = edit_yaml(cfg)
+    
+    # ok, do the update
+    ts = api.timesheet_from_yaml(cfg)
+    cur.update(yaml = curcfg)
+    print(f"clocked out after {_time_to_hms(cur.end - cur.start)}")
+    ts.clock_in()
+    print(f"clocked {'in' if not ts.end else 'out'}")
+    print(f"  jobcode: {api.jobcodes()[int(ts.jobcode_id)]['name']}")
+    for k,v in ts.customfields.items():
+        print(f"  {api.customfields()[int(k)]['name']}: {v}")
+parser_switch = subparsers.add_parser('switch', aliases = ['sw', 's'], help = "Simultaneously clock out of the current timesheet and switch to a new timesheet.")
+parser_switch.set_defaults(cmd = cmd_switch)
+parser_switch.add_argument("--edit", "-e", action='store_true', default = False, help = 'launch an editor on the new timesheet')
+parser_switch.add_argument("--editold", "-o", action='store_true', default = False, help = 'launch an editor on the previous timesheet before closing it out')
+parser_switch.add_argument("--template", "-t", metavar = "TEMPLATE_NAME", type = str, nargs = 1, help = 'name of a template yaml file', default = None)
+
+def cmd_clockout(api, args):
+    cur = api.timesheet_cur()
+    if not cur:
+        raise ValueError('not clocked in; did you mean to clockin or edit --previous?')
+    if args.edit:
+        cfg = edit_yaml(cur.to_yaml())
+        cur.update(yaml = cfg)
+        print("updated timesheet")
+    cur.clock_out()
+    print(f"clocked out after {_time_to_hms(cur.end - cur.start)}")
+parser_clockout = subparsers.add_parser('clockout', aliases = ['co', 'out'], help = "Edit the current timesheet.")
+parser_clockout.set_defaults(cmd = cmd_clockout)
+parser_clockout.add_argument("--edit", "-e", action='store_true', default = False, help = 'launch an editor on the proposed timesheet')
+
+def cmd_abandon(api, args):
+    cur = api.timesheet_cur()
+    if not cur:
+        raise ValueError('not clocked in; did you mean to edit --previous?')
+    old = yaml.dump(cur.to_yaml(), sort_keys = False)
+    cur.delete()
+    print("timesheet abandoned; old timesheet follows:")
+    print("---")
+    print(old)
+parser_abandon = subparsers.add_parser('abandon', aliases = ['delete', 'ab', 'del'], help = "Abandon the current timesheet without clocking out.")
+parser_abandon.set_defaults(cmd = cmd_abandon)
+
+def cmd_list(api, args):
+    print("jobcodes:")
+    for k,v in api.jobcodes_avail().items():
+        print(f"  {v['name']}")
+    print("")
+    for k,v in api.customfields().items():
+        print(f"{v['name']}:")
+        for k2,v2 in v['items'].items():
+            print(f"  {v2}")
+parser_list = subparsers.add_parser('list', aliases = ['ls'], help = "List jobcodes and custom field options.")
+parser_list.set_defaults(cmd = cmd_list)
+
+args = parser.parse_args()
+
+api = TSheets(token = open(os.path.expanduser(args.token), "r").read().strip())
+args.cmd(api, args)
