@@ -49,7 +49,7 @@ def edit_yaml(cfg):
     with tempfile.NamedTemporaryFile(suffix='.yaml', prefix='tsheets') as tf:
         tf.write(yaml.dump(cfg, sort_keys = False).encode())
         tf.flush()
-        subprocess.call([os.environ.get('EDITOR', '/usr/bin/editor'), tf.name])
+        subprocess.call(['/usr/bin/env', os.environ.get('EDITOR', 'editor'), tf.name])
         
         tf.seek(0)
         newdata = tf.read()
