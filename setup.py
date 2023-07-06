@@ -7,6 +7,5 @@ setup(
     author='Joshua Wise',
     packages=['tsheetspy'],
     scripts=['tsheetspy/scripts/tsheets'],
-    install_requires=[
-    ]
+    install_requires=['requests']
 )
