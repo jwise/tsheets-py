@@ -83,7 +83,7 @@ class TSheets:
     def jobcodes_avail(self):
         j = self.jobcodes()
         asns = self._request("jobcode_assignments", params = { "user_ids": str(self.user()['id']) })
-        return { asn['jobcode_id']: j[asn['jobcode_id']] for id,asn in asns['results']['jobcode_assignments'].items() if asn['active'] }
+        return { asn['jobcode_id']: j[asn['jobcode_id']] for id,asn in asns['results']['jobcode_assignments'].items() if asn['active'] and asn['jobcode_id'] in j }
 
     def timesheet_cur(self):
         rv = self._request("timesheets", params = {"on_the_clock": "yes", "start_date": _1wkago_str(), "user_ids": self.user()['id'] })['results']['timesheets']
