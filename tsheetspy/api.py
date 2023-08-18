@@ -63,7 +63,15 @@ class TSheets:
 
     @functools.cache
     def jobcodes_raw(self):
-        return self._request("jobcodes")['results']['jobcodes']
+        jobcodes = {}
+        page = 1
+        while True:
+            rv = self._request("jobcodes", params = { 'page': page })
+            jobcodes.update(rv['results']['jobcodes'])
+            page += 1
+            if not rv['more']:
+                break
+        return jobcodes
 
     def jobcodes(self):
         j = self.jobcodes_raw()
