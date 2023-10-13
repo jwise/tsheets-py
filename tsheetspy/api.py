@@ -62,19 +62,19 @@ class TSheets:
         return { int(id): mkfield(id) for id in raw if raw[id]['active'] }
 
     @functools.cache
-    def jobcodes_raw(self):
+    def jobcodes_raw(self, active_only = True):
         jobcodes = {}
         page = 1
         while True:
-            rv = self._request("jobcodes", params = { 'page': page })
+            rv = self._request("jobcodes", params = { 'page': page, 'active': 'true' if active_only else 'both' })
             jobcodes.update(rv['results']['jobcodes'])
             page += 1
             if not rv['more']:
                 break
         return jobcodes
 
-    def jobcodes(self):
-        j = self.jobcodes_raw()
+    def jobcodes(self, active_only = True):
+        j = self.jobcodes_raw(active_only)
         ps = {}
         def mkproj(id):
             proj = j[str(id)]
@@ -88,8 +88,8 @@ class TSheets:
         return { int(id): mkproj(id) for id in j }
 
     @functools.cache
-    def jobcodes_avail(self):
-        j = self.jobcodes()
+    def jobcodes_avail(self, active_only = True):
+        j = self.jobcodes(active_only)
         page = 1
         asns = {}
         while True:
@@ -116,6 +116,17 @@ class TSheets:
     
     def timesheet_from_yaml(self, yaml):
         return Timesheet(api = self, yaml = yaml)
+    
+    def timesheets_between(self, tmfrom, tmto):
+        page = 1
+        timesheets = {}
+        while True:
+            rv = self._request("timesheets", params = {"on_the_clock": "both", "start_date": tmfrom.strftime('%Y-%m-%d'), "end_date": tmto.strftime('%Y-%m-%d'), "page": page })
+            timesheets.update(rv['results']['timesheets'])
+            page += 1
+            if not rv['more']:
+                break
+        return [ Timesheet(api = self, json = tsv) for tsk,tsv in timesheets.items() ]
 
     def totals(self):
         total1 = self._request("reports/current_totals", method = 'POST', payload = { "data": {"on_the_clock": "both", "user_ids": self.user()['id'] }})['results']['current_totals'].popitem()[1]
@@ -207,7 +218,7 @@ class Timesheet:
         return {
             'id': self.id,
             'user_id': self.user_id,
-            'jobcode': self.api.jobcodes_avail()[self.jobcode_id]['name'],
+            'jobcode': self.api.jobcodes().get(self.jobcode_id, self.api.jobcodes(active_only = False).get(self.jobcode_id, {'name': f"unknown jobcode {self.jobcode_id}"}))['name'],
             'start': self.start.isoformat(),
             'end': self.end.isoformat() if self.end else None,
             'fields': { self.api.customfields()[int(k)]['name']: v for k,v in self.customfields.items()},
