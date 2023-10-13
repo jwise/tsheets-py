@@ -148,11 +148,18 @@ class Timesheet:
             self.notes = json['notes']
             self.customfields = json['customfields'] # note: str(id) -> stringvalue!
             self.on_the_clock = json['on_the_clock']
-            self.start = datetime.datetime.fromisoformat(json['start'])
+            try:
+                self.start = datetime.datetime.fromisoformat(json['start'])
+            except:
+                self.start = None
             try:
                 self.end = datetime.datetime.fromisoformat(json['end'])
             except:
                 self.end = None
+            try:
+                self.duration = int(json['duration'])
+            except:
+                self.duration = None
             self.date = datetime.date.fromisoformat(json['date'])
             self.exists = True
         elif yaml:
@@ -219,10 +226,11 @@ class Timesheet:
             'id': self.id,
             'user_id': self.user_id,
             'jobcode': self.api.jobcodes().get(self.jobcode_id, self.api.jobcodes(active_only = False).get(self.jobcode_id, {'name': f"unknown jobcode {self.jobcode_id}"}))['name'],
-            'start': self.start.isoformat(),
+            'start': self.start.isoformat() if self.start else None,
             'end': self.end.isoformat() if self.end else None,
             'fields': { self.api.customfields()[int(k)]['name']: v for k,v in self.customfields.items()},
             'notes': self.notes,
+            **({'duration': self.duration} if self.duration and not self.start else {}),
         }
         # yaml.dump(to_yaml(), sort_keys = False)
     
