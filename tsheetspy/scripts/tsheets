@@ -182,12 +182,12 @@ parser_list = subparsers.add_parser('list', aliases = ['ls'], help = "List jobco
 parser_list.set_defaults(cmd = cmd_list)
 
 def cmd_report(api, args):
-    rpt = api.timesheets_between(datetime.datetime.strptime(args.start, "%Y-%m-%d"), datetime.datetime.strptime(args.end, "%Y-%m-%d"))
+    rpt = api.timesheets_between(datetime.datetime.strptime(args.start[0], "%Y-%m-%d"), datetime.datetime.strptime(args.end[0], "%Y-%m-%d"))
     print(json.dumps([ ts.to_yaml() for ts in rpt ]))
 parser_report = subparsers.add_parser('report', help = "Produce a JSON report of timesheets in a given time period.")
 parser_report.set_defaults(cmd = cmd_report)
-parser_report.add_argument("--start", "-s", metavar = "YYYY-MM-DD", type = str, nargs = 1, help = 'start date for report', default = (datetime.date.today() - datetime.timedelta(weeks = 1)).strftime('%Y-%m-%d'))
-parser_report.add_argument("--end", "-e", metavar = "YYYY-MM-DD", type = str, nargs = 1, help = 'end date for report', default = datetime.date.today().strftime('%Y-%m-%d'))
+parser_report.add_argument("--start", "-s", metavar = "YYYY-MM-DD", type = str, nargs = 1, help = 'start date for report', default = [(datetime.date.today() - datetime.timedelta(weeks = 1)).strftime('%Y-%m-%d')])
+parser_report.add_argument("--end", "-e", metavar = "YYYY-MM-DD", type = str, nargs = 1, help = 'end date for report', default = [datetime.date.today().strftime('%Y-%m-%d')])
 
 args = parser.parse_args()
 
