@@ -90,8 +90,15 @@ class TSheets:
     @functools.cache
     def jobcodes_avail(self):
         j = self.jobcodes()
-        asns = self._request("jobcode_assignments", params = { "user_ids": str(self.user()['id']) })
-        return { asn['jobcode_id']: j[asn['jobcode_id']] for id,asn in asns['results']['jobcode_assignments'].items() if asn['active'] and asn['jobcode_id'] in j }
+        page = 1
+        asns = {}
+        while True:
+            rv = self._request("jobcode_assignments", params = { "user_ids": str(self.user()['id']), 'page': page })
+            asns.update(rv['results']['jobcode_assignments'])
+            page += 1
+            if not rv['more']:
+                break
+        return { asn['jobcode_id']: j[asn['jobcode_id']] for id,asn in asns.items() if asn['active'] and asn['jobcode_id'] in j }
 
     def timesheet_cur(self):
         rv = self._request("timesheets", params = {"on_the_clock": "yes", "start_date": _1wkago_str(), "user_ids": self.user()['id'] })['results']['timesheets']
